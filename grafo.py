@@ -1,66 +1,35 @@
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Tuple
 from collections import defaultdict, deque
 import time, random, copy
-
 class Graph:
     def __init__(self):
         self.num_vertices = 0
         self.edge_count = 0
-        self.adj_list: Dict[int, List[Tuple[int, float]]] = defaultdict(list)
-        self.adj_matrix: Optional[List[List[Optional[float]]]] = None
-        self.degrees: Dict[int, int] = defaultdict(int)
-        
+        self.adj_list: Dict[int, List[int]] = defaultdict(list)
+        self.edges: List[Tuple[int, int]] = []
+
     def load_from_file(self, filepath: str):
         with open(filepath, 'r') as file:
             lines = file.readlines()
             self.num_vertices = int(lines[0].strip())
-            self.adj_matrix = [[None] * self.num_vertices for _ in range(self.num_vertices)]
             for line in lines[1:]:
                 parts = line.strip().split()
                 if len(parts) >= 2:
                     u, v = int(parts[0]), int(parts[1])
-                    weight = float(parts[2]) if len(parts) == 3 else 1.0
-                    self.add_edge(u, v, weight)
-            
-    def get_neighbors(self, v: int) -> List[int]:
-        return [i + 1 for i, weight in enumerate(self.adj_matrix[v - 1]) if weight is not None]
-    
-    def add_edge(self, u: int, v: int, weight: float = 1.0):
-        self.adj_matrix[u - 1][v - 1] = weight
+                    self.add_edge(u, v)
+
+    def add_edge(self, u: int, v: int):
+        self.adj_list[u].append(v)
+        self.edges.append((u, v))
         self.edge_count += 1
-        self.degrees[u] += 1
-        
-    def topological_sort_dfs(self) -> List[int]:
-        visited = set()
-        order = []
-        on_stack = set()
-        has_cycle = [False] 
 
-        def dfs(v: int):
-            visited.add(v)
-            on_stack.add(v)
-            for neighbor in self.get_neighbors(v):
-                if neighbor not in visited:
-                    dfs(neighbor)
-                elif neighbor in on_stack:
-                    has_cycle[0] = True 
-            on_stack.remove(v)
-            order.append(v)
-
-        for vertex in range(1, self.num_vertices + 1):
-            if vertex not in visited:
-                dfs(vertex)
-
-        if has_cycle[0]:
-            raise ValueError("O grafo tem ciclos!")
-
-        return order[::-1]
+    def get_neighbors(self, v: int) -> List[int]:
+        return self.adj_list[v]
 
     def topological_sort_kahn(self) -> List[int]:
         in_degree = {v: 0 for v in range(1, self.num_vertices + 1)}
-        for v in range(1, self.num_vertices + 1):
-            for neighbor in self.get_neighbors(v):
-                in_degree[neighbor] += 1
+        for u, v in self.edges:
+            in_degree[v] += 1
 
         queue = deque([v for v in range(1, self.num_vertices + 1) if in_degree[v] == 0])
         order = []
@@ -77,63 +46,95 @@ class Graph:
             raise ValueError("O grafo tem ciclos!")
 
         return order
-
-    def topological_sort_liu(self, in_degree: Dict[int, int], queue: deque) -> List[int]:
+    
+    def topological_sort_dfs(self) -> List[int]:
+        visited = set()
         order = []
-        
-        # Processa os vértices enquanto a fila não estiver vazia
-        while queue:
-            u = queue.popleft()
-            order.append(u)
+        on_stack = set()
+        has_cycle = [False]
 
-            # Processa os vizinhos de u
-            for v in range(self.num_vertices):
-                if self.adj_matrix[u - 1][v] is not None:  # Ajuste de índice para 0-based
-                    in_degree[v + 1] -= 1  # Decrementa o grau de entrada de v (1-based)
-                    if in_degree[v + 1] == 0:
-                        queue.append(v + 1)  # Coloca v na fila se o grau de entrada for 0
+        def dfs(v: int):
+            visited.add(v)
+            on_stack.add(v)
+            for neighbor in self.get_neighbors(v):
+                if neighbor not in visited:
+                    dfs(neighbor)
+                elif neighbor in on_stack:
+                    has_cycle[0] = True
+            on_stack.remove(v)
+            order.append(v)
+
+        for vertex in range(1, self.num_vertices + 1):
+            if vertex not in visited:
+                dfs(vertex)
+
+        if has_cycle[0]:
+            raise ValueError("O grafo tem ciclos!")
+
+        return order[::-1]
+
+
+    def topological_sort_liu(self) -> List[int]:
+        # Cria lista de vértices
+        order = list(range(1, self.num_vertices + 1))
+        changed = True
+
+        while changed:
+            changed = False
+            for u, v in self.edges:
+                pos_u = order.index(u)
+                pos_v = order.index(v)
+                if pos_u > pos_v:
+                    order[pos_u], order[pos_v] = order[pos_v], order[pos_u]
+                    changed = True
+
         return order
 
+# Função para gerar entrada aleatória de um DAG
+def gerar_entrada_aleatoria(nome_arquivo, num_vertices=None, num_arestas=None):
+    if num_vertices is None:
+        num_vertices = random.randint(10, 100)  # 10 a 100 vértices
+    if num_arestas is None:
+        num_arestas = random.randint(num_vertices - 1, num_vertices * (num_vertices - 1) // 2)
 
-# Função de pré-processamento que calcula os graus de entrada e a fila para Liu
-def preparar_dados_para_ordem_topologica(grafo: Graph):
-    # Calculando os graus de entrada para todos os algoritmos
-    in_degree = {v: 0 for v in range(1, grafo.num_vertices + 1)}
-    for v in range(1, grafo.num_vertices + 1):
-        for neighbor in grafo.get_neighbors(v):
-            in_degree[neighbor] += 1
+    with open(nome_arquivo, 'w') as f:
+        f.write(f"{num_vertices}\n")
+        
+        arestas = set()
+        while len(arestas) < num_arestas:
+            v1 = random.randint(1, num_vertices)
+            v2 = random.randint(1, num_vertices)
+            if v1 < v2:
+                arestas.add((v1, v2))
 
-    # Preparando fila de entrada 0 para o Liu
-    queue = deque([v for v in range(1, grafo.num_vertices + 1) if in_degree[v] == 0])
 
-    return in_degree, queue
+        for v1, v2 in arestas:
+            f.write(f"{v1} {v2} 1\n")
 
-# Função para testar os três algoritmos
-def testar_algoritmos(grafo_base: Graph):
-    resultados = {}
 
-    # Pré-processamento dos dados (graus de entrada e fila)
-    in_degree, queue = preparar_dados_para_ordem_topologica(grafo_base)
+def testar_algoritmos(grafo_base: Graph, repeticoes: int = 100):
+    resultados = {'Kahn': [], 'DFS': [], 'Liu': []}
+    execucoes_exemplo = {}
 
-    # Kahn
-    g_kahn = copy.deepcopy(grafo_base)  # Faz uma cópia profunda do grafo
-    t0 = time.perf_counter()
-    ordem_kahn = g_kahn.topological_sort_kahn()
-    t1 = time.perf_counter()
-    resultados['Kahn'] = (ordem_kahn, t1 - t0)
+    for _ in range(repeticoes):
+        for nome, metodo in {
+            'Kahn': Graph.topological_sort_kahn,
+            'DFS': Graph.topological_sort_dfs,
+            'Liu': Graph.topological_sort_liu
+        }.items():
+            g_copia = copy.deepcopy(grafo_base)
+            t0 = time.perf_counter()
+            resultado = metodo(g_copia)
+            t1 = time.perf_counter()
+            resultados[nome].append(t1 - t0)
 
-    # DFS
-    g_dfs = copy.deepcopy(grafo_base)
-    t0 = time.perf_counter()
-    ordem_dfs = g_dfs.topological_sort_dfs()
-    t1 = time.perf_counter()
-    resultados['DFS'] = (ordem_dfs, t1 - t0)
+            if nome not in execucoes_exemplo:
+                execucoes_exemplo[nome] = resultado
 
-    # Liu
-    g_liu = copy.deepcopy(grafo_base)
-    t0 = time.perf_counter()
-    ordem_liu = g_liu.topological_sort_liu(in_degree, queue)  # Passando os dados pré-processados
-    t1 = time.perf_counter()
-    resultados['Liu'] = (ordem_liu, t1 - t0)
 
-    return resultados
+    medias = {
+        alg: (execucoes_exemplo[alg], sum(tempos) / len(tempos))
+        for alg, tempos in resultados.items()
+    }
+
+    return medias
